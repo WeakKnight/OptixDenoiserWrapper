@@ -1,14 +1,5 @@
 #include "optix_denoiser_wrapper.h"
 
-#include <stdio.h>
-#include <sstream>
-#include <iostream>
-#include <fstream>
-#include <cstdlib>
-#include <iomanip>
-#include <vector>
-#include <cmath>
-
 #define NOMINMAX
 #include <cuda_runtime.h>
 #include <optix.h>
@@ -564,12 +555,50 @@ void OptiXDenoiser::finish()
         CUDA_CHECK( cudaFree(reinterpret_cast<void*>(m_layers[i].output.data) ) ); 
 }
 
-
+static OptiXDenoiser::Data s_data;
+static OptiXDenoiser s_denoiser;
+static float* s_output_buffer = nullptr;
 extern "C"
 {
-    void test_val()
+    void optix_denoiser_set_image_size(uint32_t width, uint32_t height)
     {
-        OPTIX_CHECK( optixInit() );
-        printf("Test!\n");
+        s_data.width = width;
+        s_data.height = height;
+    }
+    void optix_denoiser_set_source_data_pointer(float* ptr)
+    {
+        s_data.color = ptr;
+    }
+    void optix_denoiser_set_normal_data_pointer(float* ptr)
+    {
+        s_data.normal = ptr;
+    }
+    void optix_denoiser_set_albedo_data_pointer(float* ptr)
+    {
+        s_data.albedo = ptr;
+    }
+    void optix_denoiser_init()
+    {
+        s_output_buffer = new float[s_data.width * s_data.height * 4];
+        s_data.outputs.push_back(s_output_buffer);
+        s_denoiser.init(s_data);
+    }
+    void optix_denoiser_update()
+    {
+        s_denoiser.update(s_data);
+    }
+    void optix_denoiser_exec()
+    {
+        s_denoiser.exec();
+    }
+    float* optix_denoiser_get_result()
+    {
+        s_denoiser.getResults();
+        return s_data.outputs[0];
+    }
+    void optix_denoiser_free()
+    {
+        delete[] s_output_buffer;
+        s_denoiser.finish();
     }
 }
