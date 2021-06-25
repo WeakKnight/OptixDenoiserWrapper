@@ -88,31 +88,29 @@ bool SaveEXR(const float* rgb, int width, int height, const char* outfilename) {
 
 }
 
-int main(int argc, char** argv)
+int main()
 {
-    char* path = argv[0];
+   float* imageData; // width * height * RGBA
+   int w;
+   int h;
+   const char* err = nullptr; // or nullptr in C++11
 
-    float* imageData; // width * height * RGBA
-    int w;
-    int h;
-    const char* err = nullptr; // or nullptr in C++11
+   int ret = LoadEXR(&imageData, &w, &h, "D:/Github/OptixDenoiserWrapper/PT_46s.exr", &err);
 
-    int ret = LoadEXR(&imageData, &w, &h, "D:/Github/OptixDenoiserWrapper/PT_46s.exr", &err);
-
-    if (ret != TINYEXR_SUCCESS)
-    {
-        if (err)
-        {
-            fprintf(stderr, "ERR : %s\n", err);
-            FreeEXRErrorMessage(err); // release memory of error message.
-        }
-    }
-	optix_denoiser_set_image_size(w, h);
-    optix_denoiser_set_source_data_pointer(imageData);
-    optix_denoiser_init();
-    optix_denoiser_exec();
-    float* denoisedImageData = optix_denoiser_get_result();
-    SaveEXR(denoisedImageData, w, h, "denoised.exr");
-    optix_denoiser_free();
-    return 0;
+   if (ret != TINYEXR_SUCCESS)
+   {
+      if (err)
+      {
+         fprintf(stderr, "ERR : %s\n", err);
+         FreeEXRErrorMessage(err); // release memory of error message.
+      }
+   }
+   optix_denoiser_set_image_size(w, h);
+   optix_denoiser_set_source_data_pointer(imageData);
+   optix_denoiser_init();
+   optix_denoiser_exec();
+   float* denoisedImageData = optix_denoiser_get_result();
+   SaveEXR(denoisedImageData, w, h, "denoised.exr");
+   optix_denoiser_free();
+   return 0;
 }
