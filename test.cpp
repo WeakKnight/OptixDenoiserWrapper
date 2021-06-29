@@ -112,5 +112,13 @@ int main()
    float* denoisedImageData = optix_denoiser_get_result();
    SaveEXR(denoisedImageData, w, h, "denoised.exr");
    optix_denoiser_free();
+
+   optix_denoiser_set_image_size(w, h);
+   optix_denoiser_set_source_data_pointer(imageData);
+   optix_denoiser_init();
+   optix_denoiser_exec();
+   denoisedImageData = optix_denoiser_get_result();
+   SaveEXR(denoisedImageData, w, h, "denoised1.exr");
+   optix_denoiser_free();
    return 0;
 }

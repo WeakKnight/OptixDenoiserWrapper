@@ -8,15 +8,123 @@
 
 #include <optix_denoiser_tiling.h>
 
+#define NOMINMAX
+#define TINYEXR_IMPLEMENTATION
+#include "tinyexr.h"
+
+float* LoadRGBAFloatFromEXR(const char* texPath)
+{
+    float* imageData; // width * height * RGBA
+    int w;
+    int h;
+    const char* err = nullptr; // or nullptr in C++11
+
+    int ret = LoadEXR(&imageData, &w, &h, texPath, &err);
+
+    if (ret != TINYEXR_SUCCESS)
+    {
+        if (err)
+        {
+            fprintf(stderr, "ERR : %s\n", err);
+            FreeEXRErrorMessage(err); // release memory of error message.
+        }
+    }
+
+    return imageData;
+}
+
+//Color Enum
+enum class Color { Red, Green, Blue, Black, White, Yellow, Orange };
+
+class  Debug
+{
+public:
+    static void Log(const char* message, Color color = Color::Black);
+    static void Log(const std::string message, Color color = Color::Black);
+    static void Log(const int message, Color color = Color::Black);
+    static void Log(const char message, Color color = Color::Black);
+    static void Log(const float message, Color color = Color::Black);
+    static void Log(const double message, Color color = Color::Black);
+    static void Log(const bool message, Color color = Color::Black);
+    static void send_log(const std::stringstream& ss, const Color& color);
+};
+
+//-------------------------------------------------------------------
+void  Debug::Log(const char* message, Color color) 
+{
+    if (callbackInstance != nullptr)
+        callbackInstance(message, (int)color, (int)strlen(message));
+}
+
+void  Debug::Log(const std::string message, Color color) {
+    const char* tmsg = message.c_str();
+    if (callbackInstance != nullptr)
+        callbackInstance(tmsg, (int)color, (int)strlen(tmsg));
+}
+
+void  Debug::Log(const int message, Color color) {
+    std::stringstream ss;
+    ss << message;
+    send_log(ss, color);
+}
+
+void  Debug::Log(const char message, Color color) 
+{
+    std::stringstream ss;
+    ss << message;
+    send_log(ss, color);
+}
+
+void  Debug::Log(const float message, Color color) 
+{
+    std::stringstream ss;
+    ss << message;
+    send_log(ss, color);
+}
+
+void  Debug::Log(const double message, Color color) 
+{
+    std::stringstream ss;
+    ss << message;
+    send_log(ss, color);
+}
+
+void Debug::Log(const bool message, Color color) 
+{
+    std::stringstream ss;
+    if (message)
+        ss << "true";
+    else
+        ss << "false";
+
+    send_log(ss, color);
+}
+
+void Debug::send_log(const std::stringstream& ss, const Color& color) 
+{
+    const std::string tmp = ss.str();
+    const char* tmsg = tmp.c_str();
+    std::cout << ss.str() << std::endl;
+    if (callbackInstance != nullptr)
+        callbackInstance(tmsg, (int)color, (int)strlen(tmsg));
+}
+
+void RegisterDebugCallback(FuncCallBack cb) 
+{
+    callbackInstance = cb;
+}
+
 #define CUDA_CHECK( call )                                                     \
     do                                                                         \
     {                                                                          \
         cudaError_t error = call;                                              \
         if( error != cudaSuccess )                                             \
         {                                                                      \
-            std::cout << "CUDA call (" << #call << " ) failed with error: '"   \
+            std::stringstream ss;                                              \
+            ss << "CUDA call (" << #call << " ) failed with error: '"          \
                << cudaGetErrorString( error )                                  \
-               << "' (" __FILE__ << ":" << __LINE__ << ")\n";                  \
+               << "' (" __FILE__ << ":" << __LINE__ << ")";                    \
+            Debug::send_log(ss, Color::Red);                                   \
         }                                                                      \
     } while( 0 )
 
@@ -44,8 +152,10 @@
         OptixResult res = call;                                                \
         if( res != OPTIX_SUCCESS )                                             \
         {                                                                      \
-            std::cout << "Optix call '" << #call << "' failed: " __FILE__ ":"  \
-               << __LINE__ << ")\n";                                           \
+            std::stringstream ss;                                              \
+            ss << "Optix call '" << #call << "' failed: " __FILE__ ":"         \
+               << __LINE__ << ")";                                             \
+            Debug::send_log(ss, Color::Red);                                   \
         }                                                                      \
     } while( 0 )
 
@@ -56,9 +166,11 @@
         cudaError_t error = cudaGetLastError();                                \
         if( error != cudaSuccess )                                             \
         {                                                                      \
-            std::cout << "CUDA error on synchronize with error '"              \
+            std::stringstream ss;                                              \
+            ss << "CUDA error on synchronize with error '"                     \
                << cudaGetErrorString( error )                                  \
-               << "' (" __FILE__ << ":" << __LINE__ << ")\n";                  \
+               << "' (" __FILE__ << ":" << __LINE__ << ")";                    \
+            Debug::send_log(ss, Color::Red);                                   \
         }                                                                      \
     } while( 0 )
 
@@ -108,6 +220,17 @@ public:
         float*    flow     = nullptr;
         std::vector< float* > aovs;     // input AOVs
         std::vector< float* > outputs;  // denoised beauty, followed by denoised AOVs
+        
+        void clear()
+        {
+            width = 0;
+            height = 0;
+            color = nullptr;
+            albedo = nullptr;
+            normal = nullptr;
+            aovs.clear();
+            outputs.clear();
+        }
     };
 
     // Initialize the API and push all data to the GPU -- normaly done only once per session
@@ -556,49 +679,70 @@ void OptiXDenoiser::finish()
 }
 
 static OptiXDenoiser::Data s_data;
-static OptiXDenoiser s_denoiser;
+static OptiXDenoiser* s_denoiser = nullptr;
 static float* s_output_buffer = nullptr;
-extern "C"
+
+void optix_denoiser_set_image_size(uint32_t width, uint32_t height)
 {
-    void optix_denoiser_set_image_size(uint32_t width, uint32_t height)
-    {
-        s_data.width = width;
-        s_data.height = height;
-    }
-    void optix_denoiser_set_source_data_pointer(float* ptr)
-    {
-        s_data.color = ptr;
-    }
-    void optix_denoiser_set_normal_data_pointer(float* ptr)
-    {
-        s_data.normal = ptr;
-    }
-    void optix_denoiser_set_albedo_data_pointer(float* ptr)
-    {
-        s_data.albedo = ptr;
-    }
-    void optix_denoiser_init()
-    {
-        s_output_buffer = new float[s_data.width * s_data.height * 4];
-        s_data.outputs.push_back(s_output_buffer);
-        s_denoiser.init(s_data);
-    }
-    void optix_denoiser_update()
-    {
-        s_denoiser.update(s_data);
-    }
-    void optix_denoiser_exec()
-    {
-        s_denoiser.exec();
-    }
-    float* optix_denoiser_get_result()
-    {
-        s_denoiser.getResults();
-        return s_data.outputs[0];
-    }
-    void optix_denoiser_free()
-    {
-        delete[] s_output_buffer;
-        s_denoiser.finish();
-    }
+    Debug::Log("Width:" + std::to_string(width));
+    Debug::Log("Height:" + std::to_string(height));
+    s_data.width = width;
+    s_data.height = height;
 }
+void optix_denoiser_set_source_data_pointer(float* ptr)
+{
+    s_data.color = ptr;
+}
+void optix_denoiser_set_normal_data_pointer(float* ptr)
+{
+    s_data.normal = ptr;
+}
+void optix_denoiser_set_albedo_data_pointer(float* ptr)
+{
+    s_data.albedo = ptr;
+}
+void optix_denoiser_init()
+{
+    Debug::Log("Denoiser Init");
+    s_output_buffer = new float[s_data.width * s_data.height * 4];
+    s_data.outputs.push_back(s_output_buffer);
+    if (s_denoiser != nullptr)
+    {
+        delete s_denoiser;
+    }
+    s_denoiser = new OptiXDenoiser();
+    s_denoiser->init(s_data);
+}
+void optix_denoiser_update()
+{
+    s_denoiser->update(s_data);
+}
+void optix_denoiser_exec()
+{
+    Debug::Log("Denoiser Exec");
+    s_denoiser->exec();
+}
+float* optix_denoiser_get_result()
+{
+    s_denoiser->getResults();
+    return s_data.outputs[0];
+}
+void optix_denoiser_free()
+{
+    delete[] s_output_buffer;
+    s_denoiser->finish();
+    delete s_denoiser;
+    s_denoiser = nullptr;
+    s_data.clear();
+}
+float* optix_denoiser_test()
+{
+    float* imageData; // width * height * RGBA
+    int w;
+    int h;
+    const char* err = nullptr; // or nullptr in C++11
+    int ret = LoadEXR(&imageData, &w, &h, "D:/Github/OptixDenoiserWrapper/PT_46s.exr", &err);
+    return imageData;
+}
+
+

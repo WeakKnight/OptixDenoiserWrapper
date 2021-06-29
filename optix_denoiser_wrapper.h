@@ -22,5 +22,10 @@ extern "C"
     OPTIX_DENOISER_WRAPPER_API void     optix_denoiser_exec();
     OPTIX_DENOISER_WRAPPER_API float*   optix_denoiser_get_result();
     OPTIX_DENOISER_WRAPPER_API void     optix_denoiser_free();
+    OPTIX_DENOISER_WRAPPER_API float*   optix_denoiser_test();
+    //Create a callback delegate
+    typedef void(*FuncCallBack)(const char* message, int color, int size);
+    static FuncCallBack callbackInstance = nullptr;
+    OPTIX_DENOISER_WRAPPER_API void RegisterDebugCallback(FuncCallBack cb);
 }
 
