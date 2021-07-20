@@ -133,6 +133,9 @@ void RegisterDebugCallback(FuncCallBack cb)
     {                                                                          \
         if( !(cond) )                                                          \
         {                                                                      \
+            std::stringstream ss;                                              \
+            ss << ": " << __FILE__ << " (" << __LINE__ << "): " << #cond;      \
+            Debug::send_log(ss, Color::Red);                                   \
             std::cout << __FILE__ << " (" << __LINE__ << "): " << #cond;       \
         }                                                                      \
     } while( 0 )
@@ -142,6 +145,9 @@ void RegisterDebugCallback(FuncCallBack cb)
     {                                                                          \
         if( !(cond) )                                                          \
         {                                                                      \
+            std::stringstream ss;                                              \
+            ss << ": " << __FILE__ << " (" << __LINE__ << "): " << #cond;      \
+            Debug::send_log(ss, Color::Red);                                   \
             std::cout << ": " << __FILE__ << " (" << __LINE__ << "): " << #cond ; \
         }                                                                      \
     } while( 0 )
